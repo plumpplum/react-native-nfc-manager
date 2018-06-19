@@ -23,6 +23,7 @@ import android.nfc.FormatException;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
+import android.nfc.NfcAdapter.ReaderCallback;
 import android.nfc.NfcEvent;
 import android.nfc.Tag;
 import android.nfc.TagLostException;
@@ -41,7 +42,7 @@ import static com.facebook.react.bridge.UiThreadUtil.runOnUiThread;
 
 import android.content.pm.PackageManager;
 
-class NfcManager extends ReactContextBaseJavaModule implements ActivityEventListener, LifecycleEventListener {
+class NfcManager extends ReactContextBaseJavaModule implements ReaderCallback, ActivityEventListener, LifecycleEventListener {
 	private static final String LOG_TAG = "ReactNativeNfcManager";
     private final List<IntentFilter> intentFilters = new ArrayList<IntentFilter>();
     private final ArrayList<String[]> techLists = new ArrayList<String[]>();
@@ -184,6 +185,24 @@ class NfcManager extends ReactContextBaseJavaModule implements ActivityEventList
 		}
 	}
 
+	@Override 
+	public void onTagDiscovered(Tag tag) {
+		try {
+			Ndef ndef = Ndef.get(tag);
+			ndef.connect();
+			NdefMessage ndefMessage = ndef.getNdefMessage();
+			Parcelable[] messages = new Parcelable[1];
+			messages[0] = ndefMessage;
+			WritableMap nfcTag = ndef2React(ndef, messages);
+			if (nfcTag != null) {
+				Log.d(LOG_TAG, "hello!");
+				sendEvent("NfcManagerDiscoverTag", nfcTag);
+			}
+		} catch (Exception e) { 
+			Log.d(LOG_TAG, "exception " + e.toString());
+		}
+	}
+
 	@ReactMethod
 	public void cancelNdefWrite(Callback callback) {
 		synchronized(this) {
@@ -253,7 +272,7 @@ class NfcManager extends ReactContextBaseJavaModule implements ActivityEventList
 	}
     
     	@ReactMethod
-	public void isSupported(Callback callback){
+	public void isSupported(Callback callback) {
 		Log.d(LOG_TAG, "isSupported");
 		boolean result = getReactApplicationContext().getCurrentActivity().getPackageManager().hasSystemFeature(PackageManager.FEATURE_NFC);
 		callback.invoke(null,result);
@@ -353,9 +372,17 @@ class NfcManager extends ReactContextBaseJavaModule implements ActivityEventList
         if (nfcAdapter != null && !currentActivity.isFinishing()) {
             try {
 				if (enable) {
-                    nfcAdapter.enableForegroundDispatch(currentActivity, getPendingIntent(), getIntentFilters(), getTechLists());
+					nfcAdapter.enableReaderMode(currentActivity, this, 
+					NfcAdapter.FLAG_READER_NFC_A |
+					NfcAdapter.FLAG_READER_NFC_B |
+					NfcAdapter.FLAG_READER_NFC_F |
+					NfcAdapter.FLAG_READER_NFC_V |
+					NfcAdapter.FLAG_READER_NFC_BARCODE |
+					NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS |
+					0,
+					null);
 				} else {
-					nfcAdapter.disableForegroundDispatch(currentActivity);
+					nfcAdapter.disableReaderMode(currentActivity);
 				}
             } catch (IllegalStateException e) {
                 Log.w(LOG_TAG, "Illegal State Exception starting NFC. Assuming application is terminating.");
